@@ -62,10 +62,23 @@ class DataBag {
         std::string getGrblVersion() { return grbl_version; }
         void setWebUIAddr(std::string addr) {if (_webui_addr != addr) _webui_changed = true; _webui_addr = addr;}
         std::string getWebUIAddr() { return _webui_addr; }
+ 
+ 
+        bool isRadioChanged() { return radio_changed;}
+        void clearRadioChange() { radio_changed = false;}
+ 
         bool isDROChanged() { return dro_changed;}
+        void clearDROChange() { dro_changed = false;}
+ 
         bool isVersionChanged() { return version_changed;}
+        void clearVersionChange() { version_changed = false;}
+
         bool isFileChanged() { return file_changed;}
-        bool isWebUICanged() { return _webui_changed = false; }
+        void clearFileChange() { file_changed = false;}
+
+        bool isWebUICanged() { return _webui_changed; }
+        void clearWebUIChange() { _webui_changed = false;}
+
         void clearAllData() {
             clearData();
             myState = startupState;
@@ -152,8 +165,10 @@ public:
         currentScreen{screens[ScreenType::SplashScreen]},  
         currentScreenType{ScreenType::SplashScreen} 
         { 
-            for (auto ic = screens.cbegin(); ic != screens.cend(); ++ic) {
+
+            for (auto ic = screenm.cbegin(); ic != screenm.cend(); ++ic) {
                 rscreens[ic->second] = ic->first;
+                //debug_println(("Scr " + std::to_string((long) ic->first)).c_str());
             }
             data->clearAllData(); 
             clearSatisfaction();
@@ -162,8 +177,12 @@ public:
     DisplayFunctions() = delete;
     virtual void begin() = 0;
     std::weak_ptr<DisplayScreen> getScreen(ScreenType t) { return screens [t]; }
+    ScreenType getScreenType(ScreenType t) { return rscreens[screens[t]]; }
+    ScreenType getScreenType(std::weak_ptr<DisplayScreen> d) { return rscreens[d.lock()]; }
+
     std::weak_ptr<DisplayScreen> firstScreen() { return screens[ScreenType::SplashScreen];}
-    std::weak_ptr<DisplayScreen> getNextScreen() { return screens[static_cast<ScreenType>(((int)currentScreenType +1) % (int)ScreenType::NUM_SCREENS)];}
+    ScreenType getNextScreenType(int n=1) { return static_cast<ScreenType>(((int)currentScreenType +n) % (int)ScreenType::NUM_SCREENS);}
+    std::weak_ptr<DisplayScreen> getNextScreen(int n=1) { return screens[getNextScreenType(n)];}
     std::weak_ptr<DisplayScreen>  getCurrentScreen() { return currentScreen;}
     void setCurrentScreen(std::weak_ptr<DisplayScreen> p) { currentScreen = p;  currentScreenType = rscreens[p.lock()]; };
     int getNumButtons() { return 0; };

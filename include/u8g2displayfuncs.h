@@ -9,7 +9,7 @@
 #define LED_TYPE    WS2812
 #define COLOR_ORDER RGB
 #endif
-#if defined(HAVE_MINI12864)
+#if defined(HAVE_ENCODER)
 #include <ESP32RotaryEncoder.h>
 #endif
 
@@ -111,7 +111,8 @@ private:
 #if defined(HAVE_WS2812_BACKLIGHT)
     CRGB leds[NUM_LEDS];
 #endif
-#if defined(HAVE_MINI12864)
+#if defined(HAVE_ENCODER)
     RotaryEncoder rotaryEncoder;
+    //int old_encval = -1;
 #endif
 };
