@@ -28,11 +28,11 @@ TFT_eSPIDisplayFunctions::TFT_eSPIDisplayFunctions(
       , DisplayFunctions{
             pd
             , { 
-              {SplashScreen, std::make_shared<TFT_eSPISplashScreen> (pd, tfta, spritea) }
-            , {RadioScreen, std::make_shared<TFT_eSPIRadioScreen>(pd, tfta, spritea)} 
-            , {DROScreen, std::make_shared<TFT_eSPIDROScreen>(pd, tfta, spritea)}
-            , {FileScreen, std::make_shared<TFT_eSPIFileScreen>(pd, tfta, spritea)} 
-            , {WebUIScreen, std::make_shared<TFT_eSPIWebUIScreen>(pd,tfta, spritea)} 
+              {ScreenType::SplashScreen, std::make_shared<TFT_eSPISplashScreen> (pd, tfta, spritea) }
+            , {ScreenType::RadioScreen, std::make_shared<TFT_eSPIRadioScreen>(pd, tfta, spritea)} 
+            , {ScreenType::DROScreen, std::make_shared<TFT_eSPIDROScreen>(pd, tfta, spritea)}
+            , {ScreenType::FileScreen, std::make_shared<TFT_eSPIFileScreen>(pd, tfta, spritea)} 
+            , {ScreenType::WebUIScreen, std::make_shared<TFT_eSPIWebUIScreen>(pd,tfta, spritea)} 
           }
          }  
          , h{tft, sprite}
@@ -224,7 +224,7 @@ void TFT_eSPIDisplayHelpers::drawStr(int x, int y, const char * str) {
 
 void TFT_eSPIDisplayHelpers::drawProgressBar(int x, int y, int width, int height, int percent) {
     sprite->drawRect(x, y, width, height, foregnd_colour);
-    sprite->fillRect(x, y, (uint32_t)(width*100)/percent, height, foregnd_colour); 
+    sprite->fillRect(x, y, (uint32_t)((uint32_t)width*((uint32_t)percent*100))/10000, height, foregnd_colour); 
 }
 
 
@@ -252,6 +252,7 @@ bool TFT_eSPISplashScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearVersionChange();
     if (datap->getVersion().length() > 0) {
       verbuf += datap->getVersion();
       got_fluidnc = true;
@@ -280,6 +281,7 @@ bool TFT_eSPIDROScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearDROChange();
     if (datap->getMyState() == "Alarm") {
         sprite->setTextColor(PALETTE_RED, backgnd_colour);
     } else if (datap->getMyState().find("Hold") == 0) {
@@ -325,10 +327,14 @@ bool TFT_eSPIFileScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearFileChange();
     sprite->fillSprite(backgnd_colour);
     uint16_t fh = sprite->fontHeight();
-    drawStr(0, 0, datap->getFname().c_str());
-    drawProgressBar(20, (fh + linespc) * 2, sprite->width() - 20, -fh, datap->getPercent());
+    const char * title = "File:";
+    auto tw = sprite->textWidth(title);
+    drawStr((sprite->width() -tw)/2,0,title);
+    drawStr(0, (fh + linespc), datap->getFname().c_str());
+    drawProgressBar(20, (fh + linespc) * 3, sprite->width() - 20, -fh, datap->getPercent());
     sprite->pushSprite(0,0);
     satisfied = datap->getPercent() >= 100;
     return satisfied;
@@ -344,6 +350,7 @@ bool TFT_eSPIRadioScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearRadioChange();
     sprite->fillScreen(0);
     uint16_t fh;
     fh = sprite->fontHeight();
@@ -351,6 +358,9 @@ bool TFT_eSPIRadioScreen::show() {
     if (datap->getRadioType().length() > 0) {
       sep = ": ";
     }
+    const char * title = datap->getRadioType() == "BT" ? "Bluetooth:" : "WiFi";
+    auto tw =  sprite->textWidth(title);
+    drawStr((sprite->width() -tw)/2,0,title);
     drawStr(0, 0, (datap->getRadioType() + sep + datap->getRadioInfo()).c_str());
     drawStr(0, (fh + linespc) * 2, datap->getRadioAddr().c_str());
     sprite->pushSprite(0,0);
@@ -368,6 +378,7 @@ bool TFT_eSPIWebUIScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearWebUIChange();
     sprite->fillSprite(backgnd_colour);
     uint16_t fh;
     const char *msg =  "WebUI from";

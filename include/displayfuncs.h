@@ -5,61 +5,67 @@
 #include <map>
 #include <memory>
 
-typedef enum screens_e {
+enum class ScreenType {
     SplashScreen = 0,
     RadioScreen,
     DROScreen,
     FileScreen,
     WebUIScreen,
-} ScreenType;
+    NUM_SCREENS
+} ;
 
 class DataBag {
     public:
         DataBag () : startupState{"No Data..."}, myState{startupState}, my_n_axis{4}, myAxes{0 }, myLimits{false }  { clearAllData();}
-        void setMyState(const std::string &state) { myState = state;}
+        void setMyState(const std::string &state) { if (myState != state)  dro_changed = true; myState = state; }
         std::string getMyState() { return myState;}
-        void setStartupState() { myState = startupState;}
+        void setStartupState() { if (myState != startupState)  dro_changed = true; myState = startupState;  }
         std::string getStartupState() { return startupState;}
 
         bool isRunState() { return myState == "Run"; }
         bool isHoldState() { return myState.find("Hold") == 0; }
 
-        void setFname(std::string name) {name = fname;}
+        void setFname(std::string name) {if (fname != name) file_changed = true; name = fname;  }
         std::string getFname() { return fname;}
-        void setAxis(int axis, pos_t val) { myAxes[axis] = val;}
-        pos_t getAxis(int axis) { return myAxes[axis];}
-        void setLimit(int axis, bool val) {myLimits[axis] = val;}
+
+        void setAxis(int axis, pos_t val) { if (myAxes[axis] != val)  dro_changed = true; myAxes[axis] = val; }
+        pos_t getAxis(int axis) { return myAxes[axis]; }
+        void setLimit(int axis, bool val) {if (myLimits[axis] != val)  dro_changed = true; myLimits[axis] = val;}
         bool isLimit(int axis) { return myLimits[axis];}
-        void setNAxes(int n_axes) { my_n_axis = n_axes; }
+        void setNAxes(int n_axes) { if (my_n_axis != n_axes)  dro_changed = true; my_n_axis = n_axes; }
         int getNAxes() { return my_n_axis; }
-        void setProbe (bool probe) {myProbe = probe;}
+        void setProbe (bool probe) { if (probe != myProbe)  dro_changed = true; myProbe = probe;}
         bool isProbe () { return myProbe; }
 
-        void setMM (bool mm) {use_mm = mm;}
+        void setMM (bool mm) {if (use_mm != mm)  dro_changed = true; use_mm = mm;}
         bool isMM () {return use_mm; }
-        void setPercent(uint32_t percent) {f_percent = percent; }
+        void setPercent(uint32_t percent) {if (f_percent != percent)  file_changed = true; f_percent = percent; }
         uint32_t  getPercent () {return f_percent; }
-        void setMist (bool mist) {s_mist = mist;}
+        void setMist (bool mist) {if(s_mist != mist) dro_changed = true; s_mist = mist;}
         bool isMist() { return s_mist;}
-        void setFlood (bool flood) {s_flood = flood;}
-        bool isFlood() { return s_mist;}
+        void setFlood (bool flood) {if(s_flood != flood) dro_changed = true; s_flood = flood;}
+        bool isFlood() { return s_flood;}
 
-        void setSpindleNum(int n) { spindleNum = n; };
+        void setSpindleNum(int n) { if (spindleNum != n) dro_changed = true; spindleNum = n; };
         int getSpindleNum () { return spindleNum; }
-        void setRadioType(std::string type) { _radio_type = type; }
-        std::string  getRadioType() { return _radio_type; }
-        void setRadioInfo(std::string info) { _radio_info = info; }
+        void setRadioType(std::string type) { if (type != _radio_type) radio_changed = true; _radio_type = type; }
+        std::string  getRadioType() {  return _radio_type; }
+        void setRadioInfo(std::string info) {  if (info != _radio_info) radio_changed = true;_radio_info = info; }
         std::string  getRadioInfo() { return _radio_info; }
 
-        void setRadioAddr(std::string addr) { _radio_addr = addr; }
+        void setRadioAddr(std::string addr) { if (addr != _radio_addr) radio_changed = true; _radio_addr = addr; }
         std::string getRadioAddr() { return _radio_addr; }
 
-        void setVersion(std::string version) {fluidnc_version = version;}
+        void setVersion(std::string version) {if (version != fluidnc_version) version_changed = true;fluidnc_version = version;}
         std::string getVersion() { return fluidnc_version; }
-        void setGrblVersion(std::string version) {grbl_version = version;}
+        void setGrblVersion(std::string version) {if (version != grbl_version) version_changed = true; grbl_version = version;}
         std::string getGrblVersion() { return grbl_version; }
-        void setWebUIAddr(std::string addr) { _webui_addr = addr;}
+        void setWebUIAddr(std::string addr) {if (_webui_addr != addr) _webui_changed = true; _webui_addr = addr;}
         std::string getWebUIAddr() { return _webui_addr; }
+        bool isDROChanged() { return dro_changed;}
+        bool isVersionChanged() { return version_changed;}
+        bool isFileChanged() { return file_changed;}
+        bool isWebUICanged() { return _webui_changed = false; }
         void clearAllData() {
             clearData();
             myState = startupState;
@@ -80,27 +86,40 @@ class DataBag {
             s_flood = false;
             spindleNum = -1;
             fname    = "";
+            dro_changed = false;
+            radio_changed = false;
+            version_changed =false;
+            _webui_changed = false;
+            file_changed = false;
         }
         std::string DRO_format(int axis, pos_t val);
     protected:
         const std::string startupState;
         std::string myState              = startupState;
-        std::string fname                = "";
         pos_t  myAxes[MAX_N_AXIS]   = { 0 };
         int    my_n_axis            = 4;
         bool   myLimits[MAX_N_AXIS] = { false };
         bool   myProbe              = false;
         bool   use_mm               = true;
-        file_percent_t  f_percent   = 0;
         bool   s_mist               = false;
         bool   s_flood              = false;
         int    spindleNum           = -1;
+        bool dro_changed = false;
+
+        std::string fname                = "";
+        file_percent_t  f_percent   = 0;
+        bool file_changed = false;
+
         std::string _radio_type; 
         std::string _radio_info;
         std::string _radio_addr;
+        bool radio_changed          = false;
+
         std::string _webui_addr;   
-        std::string fluidnc_version         = "";
-        std::string grbl_version         = "";
+        bool _webui_changed          = false;
+        std::string fluidnc_version = "";
+        std::string grbl_version    = "";
+        bool version_changed        = false;
 };
 
 class DisplayHelpers {
@@ -130,18 +149,23 @@ public:
    DisplayFunctions(std::shared_ptr<DataBag> pd, std::map<ScreenType, std::shared_ptr<DisplayScreen>> screenm) : 
         data{pd},
         screens{screenm}, 
-        currentScreen{screens[SplashScreen]},  
-        currentScreenType{SplashScreen} 
+        currentScreen{screens[ScreenType::SplashScreen]},  
+        currentScreenType{ScreenType::SplashScreen} 
         { 
+            for (auto ic = screens.cbegin(); ic != screens.cend(); ++ic) {
+                rscreens[ic->second] = ic->first;
+            }
             data->clearAllData(); 
             clearSatisfaction();
+
         };  
     DisplayFunctions() = delete;
     virtual void begin() = 0;
     std::weak_ptr<DisplayScreen> getScreen(ScreenType t) { return screens [t]; }
-    std::weak_ptr<DisplayScreen> firstScreen() { return screens[SplashScreen];}
+    std::weak_ptr<DisplayScreen> firstScreen() { return screens[ScreenType::SplashScreen];}
+    std::weak_ptr<DisplayScreen> getNextScreen() { return screens[static_cast<ScreenType>(((int)currentScreenType +1) % (int)ScreenType::NUM_SCREENS)];}
     std::weak_ptr<DisplayScreen>  getCurrentScreen() { return currentScreen;}
-    void setCurrentScreen(std::weak_ptr<DisplayScreen> p) { currentScreen = p;};
+    void setCurrentScreen(std::weak_ptr<DisplayScreen> p) { currentScreen = p;  currentScreenType = rscreens[p.lock()]; };
     int getNumButtons() { return 0; };
     virtual int getPressedButton() {return -1;};
     virtual int getEncoder(){ return -1;};
@@ -156,6 +180,8 @@ public:
     }
 protected:
     std::map <ScreenType, std::shared_ptr<DisplayScreen>> screens;
+    std::map <std::shared_ptr<DisplayScreen>, ScreenType> rscreens;
+
     std::weak_ptr <DisplayScreen> currentScreen;
     ScreenType currentScreenType;
 };

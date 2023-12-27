@@ -9,15 +9,18 @@
             ,std::make_shared<DataBag>()) {};
     U8G2DisplayFunctions::U8G2DisplayFunctions(std::shared_ptr<U8G2>u8g2a, std::shared_ptr<DataBag> pd) :  
         u8g2{u8g2a}
+#if defined(HAVE_ENCODER)
+        , rotaryEncoder{PIN_ENCODER_A, PIN_ENCODER_B, PIN_ENCODER_SW}   
+#endif
         //, buttons{ace_button::AceButton(PIN_BUTTON_1), ace_button::AceButton(PIN_BUTTON_2)} 
         , DisplayFunctions{
             pd
             , { 
-              {SplashScreen, std::make_shared<U8G2SplashScreen>(pd, u8g2a) }
-            , {RadioScreen, std::make_shared<U8G2RadioScreen>(pd, u8g2a)} 
-            , {DROScreen, std::make_shared<U8G2DROScreen>(pd, u8g2a)}
-            , {FileScreen, std::make_shared<U8G2FileScreen>(pd, u8g2a)} 
-            , {WebUIScreen, std::make_shared<U8G2WebUIScreen>(pd, u8g2a)} 
+              {ScreenType::SplashScreen, std::make_shared<U8G2SplashScreen>(pd, u8g2a) }
+            , {ScreenType::RadioScreen, std::make_shared<U8G2RadioScreen>(pd, u8g2a)} 
+            , {ScreenType::DROScreen, std::make_shared<U8G2DROScreen>(pd, u8g2a)}
+            , {ScreenType::FileScreen, std::make_shared<U8G2FileScreen>(pd, u8g2a)} 
+            , {ScreenType::WebUIScreen, std::make_shared<U8G2WebUIScreen>(pd, u8g2a)} 
           }
          }  
     {
@@ -32,15 +35,17 @@
 
    U8G2DisplayFunctions::U8G2DisplayFunctions(std::shared_ptr<U8G2>u8g2a, std::shared_ptr<DataBag> pd) :  
         u8g2{u8g2a}
+#if defined(HAVE_ENCODER)
         , rotaryEncoder{PIN_ENCODER_A, PIN_ENCODER_B, PIN_ENCODER_SW}   
+#endif
         , DisplayFunctions{
             pd
             , { 
-              {SplashScreen, std::make_shared<U8G2SplashScreen>(pd, u8g2a) }
-            , {RadioScreen, std::make_shared<U8G2RadioScreen>(pd, u8g2a)} 
-            , {DROScreen, std::make_shared<U8G2DROScreen>(pd, u8g2a)}
-            , {FileScreen, std::make_shared<U8G2FileScreen>(pd, u8g2a)} 
-            , {WebUIScreen, std::make_shared<U8G2WebUIScreen>(pd, u8g2a)} 
+              {ScreenType::SplashScreen, std::make_shared<U8G2SplashScreen>(pd, u8g2a) }
+            , {ScreenType::RadioScreen, std::make_shared<U8G2RadioScreen>(pd, u8g2a)} 
+            , {ScreenType::DROScreen, std::make_shared<U8G2DROScreen>(pd, u8g2a)}
+            , {ScreenType::FileScreen, std::make_shared<U8G2FileScreen>(pd, u8g2a)} 
+            , {ScreenType::WebUIScreen, std::make_shared<U8G2WebUIScreen>(pd, u8g2a)} 
           }
          }  
     {
@@ -74,14 +79,16 @@ void U8G2DisplayFunctions::begin()  {
         leds[2] = CRGB::DarkGray;
         FastLED.show();
 #endif
-#if defined(HAVE_MINI12864)
+#if defined(HAVE_ENCODER)
         pinMode (PIN_ENCODER_A, INPUT);
         pinMode (PIN_ENCODER_B, INPUT);
 	    rotaryEncoder.setEncoderType( EncoderType::FLOATING );
-        rotaryEncoder.setBoundaries( 1, 10, true );
+        rotaryEncoder.setBoundaries( (long)ScreenType::SplashScreen, (long)ScreenType::NUM_SCREENS -1, true );
 	    //rotaryEncoder.onTurned( &knobCallback );
         //rotaryEncoder.onPressed( &buttonCallback );
         rotaryEncoder.begin();
+        //old_encval = rotaryEncoder.getEncoderValue();
+        rotaryEncoder.setEncoderValue((long)ScreenType::DROScreen);
 #endif
         u8g2->begin();
         //u8g2->setRotation(3);
@@ -115,7 +122,7 @@ void U8G2DisplayFunctions::begin()  {
 
 void U8G2DisplayHelpers::drawProgressBar(int x, int y, int width, int height, int percent) {
     u8g2->drawFrame(x, y, width, height);
-    u8g2->drawBox(x, y, (uint32_t)(width*100)/percent, height); 
+    u8g2->drawBox(x, y, (uint32_t)((uint32_t)width*((uint32_t)percent*100))/10000, height); 
 }
 
 void U8G2DisplayHelpers::drawCheckbox(int x, int y, int width, bool checked, std::string label) {
@@ -133,6 +140,7 @@ bool U8G2SplashScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearVersionChange();
     u8g2->clearBuffer();
     u8g2->setDrawColor(1);
     u8g2->drawXBMP(-1, (u8g2->getDisplayHeight()-logo_height)/2, logo_width, logo_height, logo_bits);
@@ -164,6 +172,7 @@ bool U8G2DROScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearDROChange();
     char   buf[12];
     const int cboxofs = 80;
     std::string axesNames = "XYZABC";
@@ -196,7 +205,7 @@ bool U8G2DROScreen::show() {
 }
 
 
-bool U8G2DROScreen::isSatisfied () { return satisfied; }
+bool U8G2DROScreen::isSatisfied () { return satisfied && !data.lock()->isDROChanged(); }
 bool U8G2DROScreen::needsWait () { return false; }
 void U8G2DROScreen::unSatisfy() { /* do nothing */}
 
@@ -205,16 +214,20 @@ bool U8G2FileScreen::show() {
     if (!datap) {
         debug_println("AAgh no pointer");
         return false;
-    }    
+    }
+    datap->clearFileChange();
     u8g2->clearBuffer();
     auto fh = u8g2->getMaxCharHeight();
-    u8g2->drawStr(0, 0, datap->getFname().c_str());
-    drawProgressBar(10, (fh + linespc) * 2, u8g2->getDisplayWidth() - 20, 12, datap->getPercent());
+    const char * title = "File:";
+    auto tw = u8g2->getStrWidth(title);
+    u8g2->drawStr((u8g2->getDisplayWidth() -tw)/2,0,title);
+    u8g2->drawStr(0, (fh + linespc) * 2, datap->getFname().c_str());
+    drawProgressBar(10, (fh + linespc) * 3, u8g2->getDisplayWidth() - 20, 12, datap->getPercent());
     u8g2->sendBuffer();
     satisfied =  datap->getPercent() >= 100;
     return satisfied;
 }
-bool U8G2FileScreen::isSatisfied () { return satisfied; }
+bool U8G2FileScreen::isSatisfied () { return satisfied && !data.lock()->isFileChanged(); }
 bool U8G2FileScreen::needsWait () { return true; }
 void U8G2FileScreen::unSatisfy() { satisfied = false;}
 
@@ -224,19 +237,23 @@ bool U8G2RadioScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearRadioChange();
     u8g2->clearBuffer();
     auto fh = u8g2->getMaxCharHeight();
     std::string sep = "";
     if (datap->getRadioType().length() > 0) {
       sep = ": ";
     }
-    u8g2->drawStr(0, 0, (datap->getRadioType() + sep + datap->getRadioInfo()).c_str());
-    u8g2->drawStr(0, (fh + linespc) * 2, datap->getRadioAddr().c_str());
+    const char * title = datap->getRadioType() == "BT" ? "Bluetooth:" : "WiFi";
+    auto tw = u8g2->getStrWidth(title);
+    u8g2->drawStr((u8g2->getDisplayWidth() -tw)/2,0,title);
+    u8g2->drawStr(0, fh + linespc, (datap->getRadioType() + sep + datap->getRadioInfo()).c_str());
+    u8g2->drawStr(0, (fh + linespc) * 3, datap->getRadioAddr().c_str());
     u8g2->sendBuffer();
     satisfied = datap->getRadioInfo().length() >0 && datap->getRadioAddr().length() > 0;
     return satisfied;
 }
-bool U8G2RadioScreen::isSatisfied () { return satisfied; }
+bool U8G2RadioScreen::isSatisfied () { return satisfied && data.lock()->isRadioChanged(); }
 bool U8G2RadioScreen::needsWait () { return true; }
 void U8G2RadioScreen::unSatisfy() { satisfied = false;}
 
@@ -246,6 +263,7 @@ bool U8G2WebUIScreen::show() {
         debug_println("AAgh no pointer");
         return false;
     }
+    datap->clearWebUIChange();
     u8g2->clearBuffer();
     auto fh = u8g2->getMaxCharHeight();
     u8g2->drawStr(0, 0, "WebUI from");
@@ -255,14 +273,14 @@ bool U8G2WebUIScreen::show() {
     return satisfied;
 }
 
-bool U8G2WebUIScreen::isSatisfied () { return satisfied; }
+bool U8G2WebUIScreen::isSatisfied () { return satisfied && !data.lock()->isRadioChanged(); }
 bool U8G2WebUIScreen::needsWait () { return true; }
 void U8G2WebUIScreen::unSatisfy() { satisfied = false;}
 
 int U8G2DisplayFunctions::getPressedButton() {
     buttons[0].check();
     buttons[1].check();
-#if defined (HAVE_MINI12864)
+#if defined (HAVE_ENCODER)
     bool rpressed = rotaryEncoder.buttonPressed();
 #endif
     bool b1p = buttonhandler[0].getPressed();
@@ -270,16 +288,21 @@ int U8G2DisplayFunctions::getPressedButton() {
     int bpressed = -1;
     if (b1p) bpressed = 0;
     if (b2p) bpressed = 1;
-#if defined (HAVE_MINI12864)
+#if defined (HAVE_ENCODER)
     if (rpressed) bpressed = 2;
 #endif
     return  bpressed;
 }
 
 int U8G2DisplayFunctions::getEncoder() {
-#if defined (HAVE_MINI12864)
+#if defined (HAVE_ENCODER)
    bool rturned = rotaryEncoder.encoderChanged();
-    if (rturned) return rotaryEncoder.getEncoderValue();
+    if (rturned) {
+        int encval = rotaryEncoder.getEncoderValue();
+        //int encchange = encval - old_encval;
+        //old_encval = encval;
+        return encval;
+    }
     else return -1;
 #else
     return -1;

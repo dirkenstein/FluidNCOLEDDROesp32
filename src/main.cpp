@@ -49,21 +49,24 @@ void do_Restart();
 
 
 
-uint32_t radio_delay       = 1000;
+
+const uint32_t popup_delay       = 1000; //time to show temporary screens
+const uint32_t max_report_interval = 2000; //max interval between status reorts (before we send '?')
+const uint32_t request_retry_interval = 1000;  //Retries when we don't get a response from FluidNC at all
+const uint32_t satisfaction_delay = 3000; //how long we wait for 'unsatisfied' screens to update 
+const uint32_t initial_satisfaction_delay = 10000; //How long we wait for all initial version data
+const uint32_t radio_retry_delay = 5000; //How long we wait to get missing AP/STA data before forcing a version report 
+
 uint32_t last_report = 0;
-uint32_t max_report_interval = 2000;
-uint32_t request_retry_interval = 1000;
 bool initial_msg_loop = true;
-uint32_t satisfaction_delay = 3000;
-uint32_t initial_satisfaction_delay = 10000;
 
 uint32_t display_delay = 0;
 uint32_t last_delay_start = 0;
 uint32_t satisfaction_start = 0;
 bool    delaying   = false;
 bool    satisfaction_delaying = false;
+std::weak_ptr<DisplayScreen>  hold_screen;
 
-//typedef bool (DisplayFunctions::* dispfun)(void); 
 std::list<std::weak_ptr<DisplayScreen>> toBeDisplayed;
 std::weak_ptr<DisplayScreen> currently_displaying = display.firstScreen();
 
@@ -80,7 +83,8 @@ void set_display_delay(uint32_t ms, bool satisfied) {
     delaying = true;
 }
 
-void nonrepeating_screen_delay(ScreenType t, bool compel) {
+void nonrepeating_screen_delay(ScreenType t, bool compel=false, bool indefinite_hold=false) {
+    debug_println(std::to_string((long)t).c_str());
     auto d = display.getScreen(t);
     auto dp = d.lock();
     if (!dp) {
@@ -93,18 +97,42 @@ void nonrepeating_screen_delay(ScreenType t, bool compel) {
         debug_println("Cannot get current screen");
         return;
     }
+    auto hs = hold_screen.lock();
+    if (!hs) {
+        debug_println("Cannot get hold screen");
+        return;
+    }
     //Don't show a delaying screen again automatically if it showed all its data last time
+    //Unless we force it to with compel
     if(dp->needsWait() && dp->isSatisfied() && !compel) return;
-    if (!delaying || (delaying && cs == dp )) {
+    //Display it now if we're not delaying and it's the same as the hold screen
+    //Or we're not delaying and it's a temporary (delay) screen 
+    //or we're delaying for a tempoary screen but we get the same screen (just an update)
+    bool delay_but_first = (delaying && cs == dp );
+    bool reshow_it = (hs == dp || dp->needsWait() || indefinite_hold);
+    if (delaying) debug_println("waiting for delay timeout");
+    if (delay_but_first) debug_println("update delaying screen");
+    if(reshow_it) debug_println("reshowing if not delayed");
+    if ((!delaying && reshow_it) || delay_but_first) {
+        debug_println("show it");
         bool satisfied = dp->show();
-        //currently_displaying = d;
         display.setCurrentScreen(d);
-        if (dp->needsWait()) set_display_delay(radio_delay, satisfied);
+        if (dp->needsWait() && !indefinite_hold) set_display_delay(popup_delay, satisfied);
+        if(indefinite_hold) {
+                hold_screen=d;
+        }
     } else {
+          debug_println("add screen to q");
           //Add the page to the end of the list if it's not already there
-
-          if (toBeDisplayed.empty() || toBeDisplayed.back().lock() != dp) 
-            toBeDisplayed.push_back(d);
+          if (!toBeDisplayed.empty())  {
+                auto bp = toBeDisplayed.back().lock();
+                if (bp && bp != dp) 
+                        toBeDisplayed.push_back(d);
+                else 
+                    debug_println("screen already at back");
+          } else {
+                toBeDisplayed.push_back(d);
+          }
     }
 }
 
@@ -139,7 +167,8 @@ extern void show_spindle_coolant(int spindle, bool flood, bool mist) {
 extern "C" void show_file(const char* filename, file_percent_t percent) {
     display.data->setFname(filename);
     display.data->setPercent(percent);
- 
+    nonrepeating_screen_delay(ScreenType::FileScreen);
+
 }
 
 extern "C" void begin_status_report() {
@@ -148,15 +177,16 @@ extern "C" void begin_status_report() {
 }
 
 extern "C" void end_status_report() {
-        nonrepeating_screen_delay(DROScreen, true);
+        //Always display this, even is already satisfied (no change)
+        //Except when it isn't the hold screen...
+        nonrepeating_screen_delay(ScreenType::DROScreen, true);
 }
 
 extern "C" void show_versions(const char* grbl_version, const char *fluidnc_version) {
     last_report = millis();
     display.data->setGrblVersion(grbl_version);
     display.data->setVersion(fluidnc_version);
-    //set_display_delay(radio_delay);
-    nonrepeating_screen_delay(SplashScreen, false);
+    nonrepeating_screen_delay(ScreenType::SplashScreen);
 }
 
 extern "C" void handle_msg(char* command, char* arguments) {
@@ -229,7 +259,7 @@ void parse_STA(std::string &_report) {
     display.data->setRadioType("STA");
     display.data->setRadioInfo(_report);
     //display.data->setRadioAddr("");
-    nonrepeating_screen_delay(RadioScreen, false);
+    nonrepeating_screen_delay(ScreenType::RadioScreen);
 }
 
 // [MSG:INFO: Connected - IP is 192.168.68.134]
@@ -238,7 +268,7 @@ void parse_IP(std::string &_report) {
     //if (start >= 1) {
     //display.data->setRadioAddr(_report.substr(start, _report.size() - start - 1));
     display.data->setRadioAddr(_report);
-    nonrepeating_screen_delay(RadioScreen, false);
+    nonrepeating_screen_delay(ScreenType::RadioScreen);
 }
 
 // [MSG:INFO: AP SSID foo IP 192.168.68.134 mask foo channel foo]
@@ -252,7 +282,7 @@ void parse_AP(std::string &_report) {
         display.data->setRadioInfo(_report.substr(0, ssid_end));
         if (ip_end > 0) {
             display.data->setRadioAddr(_report.substr(ip_start, ip_end - ip_start));
-            nonrepeating_screen_delay(RadioScreen, false);
+            nonrepeating_screen_delay(ScreenType::RadioScreen);
             return;
         }
     }
@@ -270,7 +300,7 @@ void parse_Mode(std::string &_report) {
             display.data->setRadioInfo(_report.substr(mode_end + 6, ssid_end -(mode_end+ 6)));
             if (ip_end >0  && ip_start > 0) {
                 display.data->setRadioAddr(_report.substr(ip_start +4, ip_end - (ip_start +4)));
-                nonrepeating_screen_delay(RadioScreen, false);
+                nonrepeating_screen_delay(ScreenType::RadioScreen);
                 return;
             }
         } 
@@ -280,19 +310,19 @@ void parse_BT(std::string &_report) {
    std::string btname = _report;
    display.data->setRadioType("BT");
    display.data->setRadioInfo (btname);
-   nonrepeating_screen_delay(RadioScreen, false);
+   nonrepeating_screen_delay(ScreenType::RadioScreen);
 }
 
 void parse_WebUI(std::string &_report) {
     display.data->setWebUIAddr(_report);
-    nonrepeating_screen_delay(WebUIScreen, true);
+    //Always show this even if it's a connection from the same IP
+    nonrepeating_screen_delay(ScreenType::WebUIScreen, true);
 }
 
 // [MSG:INFO: Connecting to STA:SSID foo]
 void parse_VER(std::string &_report) {
     display.data->setVersion("v"+ _report.substr(0, _report.find(" ") ));
-    //set_display_delay(radio_delay);
-    nonrepeating_screen_delay(SplashScreen, false);
+    nonrepeating_screen_delay(ScreenType::SplashScreen);
 
 }
 
@@ -301,8 +331,7 @@ void do_Restart() {
     display.data->clearAllData();
     display.clearSatisfaction();
     initial_msg_loop = true;
-    nonrepeating_screen_delay(SplashScreen, true);
-    //set_display_delay(radio_delay);
+    nonrepeating_screen_delay(ScreenType::SplashScreen, true);
     fnc_wait_ready();  // Synchronize with FluidNC
     fnc_putchar('?');  // Initial status report
 }
@@ -342,10 +371,10 @@ void setup() {
     FNCSerial.begin(115200, SERIAL_8N1, RX1_PIN, TX1_PIN);  // connected to FluidNC
 
     display.begin();
-    //display.getScreen(SplashScreen)->show();
+    //display.getScreen(ScreenType::SplashScreen)->show();
     fnc_send_line("$Build/Info", 3000);
-    nonrepeating_screen_delay(SplashScreen, true);
-    //set_display_delay(radio_delay);
+    hold_screen = display.getScreen(ScreenType::DROScreen);
+    nonrepeating_screen_delay(ScreenType::SplashScreen, true);
  }
 
 void doNextScreen() {
@@ -360,7 +389,13 @@ void doNextScreen() {
         bool satisfied = lastp->show();
         //currently_displaying = last;
         display.setCurrentScreen(last);
-        if (lastp->needsWait()) (radio_delay, satisfied);
+        if (lastp->needsWait()) set_display_delay(popup_delay, satisfied);
+    } else {
+        auto holdp = hold_screen.lock();
+        if (holdp) {
+            bool satisfied = holdp->show();
+            display.setCurrentScreen(hold_screen);
+        }
     }
 }
 
@@ -393,7 +428,7 @@ void loop() {
                 if (retries > 1 && !initial_msg_loop) {
                     display.data->clearAllData();
                     display.clearSatisfaction();
-                    nonrepeating_screen_delay(DROScreen, false);
+                    nonrepeating_screen_delay(ScreenType::DROScreen, false, true);
                 }
                 fnc_putchar('?');  // Initial status report
                 last_request = millis();
@@ -402,8 +437,8 @@ void loop() {
         } else {
             retries = 0;
         }
-        if (millis() - last_radio > 5000) {
-            auto rs = display.getScreen(RadioScreen);
+        if (millis() - last_radio > radio_retry_delay) {
+            auto rs = display.getScreen(ScreenType::RadioScreen);
             auto cd = display.getCurrentScreen();
             auto rsp = rs.lock();
             auto cdp = cd.lock();
@@ -441,8 +476,10 @@ void readButtons() {
 }
 
 void readEncoder() {
-    if (int encval = display.getEncoder() != -1) {
-        debug_println(std::to_string(encval).c_str());
+    int encval = display.getEncoder();
+    if (encval!= -1) {
+        ScreenType nt  = static_cast<ScreenType>(encval);
+        nonrepeating_screen_delay(nt, true, true);
     } 
 }
 

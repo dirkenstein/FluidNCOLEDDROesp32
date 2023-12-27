@@ -19,7 +19,6 @@ static int  _ack_time_limit;
 static int _n_axis;
 
 
-
 static struct gcode_modes old_gcode_modes;
 static struct gcode_modes new_gcode_modes;
 
@@ -70,7 +69,6 @@ bool atofraction(const char* p, int32_t* pnumerator, uint32_t* pdenominator) {
     }
     *pnumerator   = numerator;
     *pdenominator = denominator;
-    char buf[100];
     return c == '\0';
 }
 
@@ -124,7 +122,7 @@ static void parse_grbl_version(char* report) {
                     show_versions(grbl_ver, fluidnc_ver);
                 }
             }
-        }    
+        }
 }
 
 //[VER:3.4 FluidNC v3.4.8:]
@@ -144,7 +142,7 @@ static void parse_version_report(char* body) {
                 show_versions(grbl_ver, fluidnc_ver);
             }
         }
-    }    
+    }
 }
 
 static void parse_error(const char* body) {
@@ -223,20 +221,18 @@ static void parse_status_report(char* field) {
     file_percent_t file_percent = 0;
     //unused values
     pos_t wcos[MAX_N_AXIS] = { 0 };
+    //unused values end
     override_percent_t frs[MAX_N_AXIS] = { 0 };
     // feedrate,spindle_speed
     uint32_t fs[2];
-    //unused values end
     // ... handle it
     while (*next) {
-        //field = next + 1;
         field = next;
         split(field, &next, '|');
         // MPos:, WPos:, Bf:, Ln:, FS:, Pn:, WCO:, Ov:, A:, SD: (ISRs:, Heap:)
         char* value;
         split(field, &value, ':');
 
-        
         if (strcmp(field, "MPos") == 0) {
             // x,y,z,...
             parse_axes(value, axes);
@@ -579,7 +575,7 @@ void __attribute__((weak)) show_override(override_percent_t * overrides) {}
 // [GC: messages
 void __attribute__((weak)) show_gcode_modes(struct gcode_modes* modes) {}
 
-// 
+// Version information
 void __attribute__((weak)) show_versions(const char * grbl_version, const char * fluidnc_version) {}
 
 // Called before and after parsing a status report; useful for
