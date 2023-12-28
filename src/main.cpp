@@ -356,6 +356,23 @@ extern "C" int milliseconds() {
     return millis();
 }
 
+//Grbl 3 [FluidNC v3.7,2 (wifi) '$' for help]
+extern "C" void handle_signon(char* version, char* extra) {
+        char * grbl_ver = version;
+        //char * fspace = strpbrk(grbl_ver, " \t\n\r");
+        //if (fspace) {
+        //    *fspace = 0;
+        //char * reportp = fspace + 1;
+        //char * body;
+        if (!strncmp(extra, "[FluidNC ", 9)) {
+                char * fspace2 = strpbrk(extra + 9, " \t\n\r]");
+                if (fspace2) {
+                    *fspace2 = 0;
+                    char * fluidnc_ver = extra + 9;
+                    show_versions(grbl_ver, fluidnc_ver);
+                }
+        }
+}
 
 void setup() {
     //pinMode(PIN_POWER_ON, OUTPUT);
